@@ -12,7 +12,7 @@ class DigitalClockCard extends LitElement {
     return {
       hass: { type: Object }, // Home Assistant object
       _config: { type: Object, state: true }, // Card configuration
-      _time: { type: String, state: true } // Internal state for the time string
+      _time: { type: String, state: true } // Internal state for the formatted time string
     };
   }
 
@@ -22,15 +22,20 @@ class DigitalClockCard extends LitElement {
       throw new Error("You need to define an entity (the digital clock sensor).");
     }
     if (config.font_size && typeof config.font_size !== 'string') {
-      console.warn("Digital Clock: font_size should be a string (e.g., '3em', '48px'). Using default.");
-      // Don't set invalid font_size, let default CSS apply
-      config.font_size = undefined;
+         console.warn("Digital Clock Card: font_size should be a string (e.g., '3em', '48px'). Using default.");
+         config.font_size = undefined; // Reset invalid font_size
     }
 
+    // Set internal config, applying defaults for new options if not present
     this._config = {
-      font_size: null, // Default to null, let CSS handle the base size
-      ...config // Merge user config
+      font_size: null,
+      hour_format: '24h', // Default hour format
+      show_seconds: true, // Default show seconds
+      ...config // Merge user config, overriding defaults
     };
+
+    // Ensure boolean type for show_seconds after merge
+    this._config.show_seconds = this._config.show_seconds !== false;
 
     // Trigger time update when config changes (especially entity)
     this._updateTime(this.hass);
@@ -38,104 +43,112 @@ class DigitalClockCard extends LitElement {
 
   // 3. Link to editor element
   static async getConfigElement() {
-    // Dynamically import the editor class when needed
-    // Ensure the path is correct relative to where HA serves the file
-    // Assuming it's served from the integration's directory mapped by HACS
-    // Let's refine this path slightly, assuming HACS structure:
-    // It might be served from /hacsfiles/st-digital-clock/st-digital-clock.js
-    // However, relative import `./` should work if the editor is in the same file or module context.
-    // For robustness if split later, use a path relative to the card URL.
-    // Let's stick to relative import for now, assuming editor is bundled or imported correctly.
-    // await import('./st-digital-clock-editor.js?v=1.1.0'); // If editor was separate
-    // Since editor is below, no dynamic import needed here for this structure.
-    return document.createElement('st-digital-clock-editor');
+    // Editor class is defined below in the same file
+    return document.createElement('st-digital-clock-card-editor');
   }
 
   // 4. Provide default configuration for UI editor preview
   static getStubConfig(hass, entities) {
     // Find the first sensor entity from our domain
     const clockEntity = entities.find(
-      (eid) => eid.startsWith("sensor.") && eid.includes("digital_clock")
+        (eid) => eid.startsWith("sensor.") && eid.includes("digital_clock")
     );
     return {
-      entity: clockEntity || "sensor.digital_clock_time",
+      entity: clockEntity || "sensor.digital_clock_time", // Default entity guess
       font_size: "4em",
-      hour_format: "24h", // Add default
-      show_seconds: true    // Add default
+      hour_format: "24h", // Add default for stub
+      show_seconds: true    // Add default for stub
     };
   }
 
   // 5. Get card size for layout
   getCardSize() {
-    // Adjust based on typical appearance if needed
-    return 2;
+    return 2; // Adjust if needed based on content/options
   }
 
-  // 6. Update time based on hass state
+  // 6. Update time based on hass state and format according to config
   _updateTime(hass) {
-    if (!hass || !this._config || !this._config.entity) {
-      this._time = "Config Error"; // Show error if config is bad
-      return;
-    }
-    const stateObj = hass.states[this._config.entity];
-    if (!stateObj) {
-      // Check if HA is still starting and states are not yet available
-      if (hass.config.state !== 'RUNNING') {
-        this._time = "Initializing...";
-      } else {
-        this._time = `Invalid Entity: ${this._config.entity}`; // Show error if entity doesn't exist
-      }
-      return;
-    }
+     if (!hass || !this._config || !this._config.entity) {
+        this._time = "Config Error";
+        return;
+     }
+     const stateObj = hass.states[this._config.entity];
+     if (!stateObj) {
+        if (hass.config.state !== 'RUNNING') {
+             this._time = "Initializing...";
+        } else {
+             this._time = `Invalid Entity: ${this._config.entity}`;
+        }
+        return;
+     }
 
-    const rawTime = stateObj.state; // Expected format HH:MM:SS from sensor
-    let displayTime = rawTime;
+     // Format the time based on sensor state and config options
+     const rawTime = stateObj.state; // Expected format HH:MM:SS from sensor
+     let displayTime = rawTime; // Default to raw time as fallback
 
-    try {
-      const parts = rawTime.split(':');
-      const hours = parseInt(parts[0], 10);
-      const minutes = parts[1];
-      const seconds = parts[2];
+     try {
+         const parts = rawTime.split(':');
+         // Basic validation
+         if (parts.length < 2 || parts.length > 3) {
+             throw new Error("Unexpected time format from sensor.");
+         }
+         const hours = parseInt(parts[0], 10);
+         const minutes = parts[1].padStart(2, '0'); // Ensure minutes have padding
+         const seconds = (parts[2] || '00').padStart(2, '0'); // Ensure seconds have padding
 
-      const showSeconds = this._config.show_seconds !== false; // Default true
-      const use12Hour = this._config.hour_format === '12h';
+         // Ensure parsed numbers are valid
+         if (isNaN(hours) || isNaN(parseInt(minutes, 10)) || isNaN(parseInt(seconds, 10))) {
+             throw new Error("Invalid time components after parsing.");
+         }
 
-      let displayHours = hours;
-      let period = '';
+         // Apply formatting options
+         const showSeconds = this._config.show_seconds !== false; // Default true
+         const use12Hour = this._config.hour_format === '12h';
 
-      if (use12Hour) {
-        period = hours >= 12 ? ' PM' : ' AM';
-        displayHours = hours % 12;
-        if (displayHours === 0) displayHours = 12; // Handle midnight/noon
-      }
+         let displayHours = hours;
+         let period = '';
 
-      displayTime = `<span class="math-inline">\{displayHours\}\:</span>{minutes}`;
-      if (showSeconds) {
-        displayTime += `:${seconds}`;
-      }
-      if (use12Hour) {
-        displayTime += period;
-      }
+         if (use12Hour) {
+             period = hours >= 12 ? ' PM' : ' AM';
+             displayHours = hours % 12;
+             if (displayHours === 0) displayHours = 12; // Handle midnight (0 -> 12 AM) and noon (12 -> 12 PM)
+         } else {
+             displayHours = hours.toString().padStart(2, '0'); // Pad 24h format if needed
+         }
 
-    } catch (e) {
-      console.error("Error formatting time:", e);
-      displayTime = rawTime; // Fallback to raw time on error
-    }
 
-    this._time = stateObj.state; // Get the time string from the sensor's state
+         displayTime = `${displayHours}:${minutes}`;
+         if (showSeconds) {
+             displayTime += `:${seconds}`;
+         }
+         if (use12Hour) {
+             displayTime += period;
+         }
+
+     } catch (e) {
+         console.error("Digital Clock Card: Error formatting time from sensor state:", rawTime, e);
+         // Fallback to raw time if formatting fails
+         displayTime = rawTime;
+     }
+
+     this._time = displayTime;
   }
 
   // 7. Called when hass object changes
   updated(changedProperties) {
-    super.updated(changedProperties); // Call super.updated()
+    super.updated(changedProperties); // Call superclass method
     if (changedProperties.has('hass')) {
       this._updateTime(this.hass);
     }
+    // Re-evaluate time format if config changes (handled by setConfig calling _updateTime)
+    // if (changedProperties.has('_config')) {
+    //    this._updateTime(this.hass);
+    // }
   }
 
-  // 8. Define CSS Styles
-  static get styles() {
-    return css`
+   // 8. Define CSS Styles
+   static get styles() {
+       return css`
        :host { /* Style the host custom element */
            display: block;
        }
@@ -167,10 +180,10 @@ class DigitalClockCard extends LitElement {
            text-overflow: ellipsis; /* Show ... if too long */
            width: 100%; /* Ensure it tries to take available width */
            text-align: center; /* Center text */
-           /* Apply inline style for font-size override */
+           /* Inline style for font-size override will be applied here */
        }
        `;
-  }
+   }
 
 
   // 9. Render the card's HTML
@@ -192,7 +205,6 @@ class DigitalClockCard extends LitElement {
   }
 
   // --- Lifecycle Callbacks ---
-  // No connected/disconnected callbacks needed for timer, sensor handles updates.
 }
 
 // Register the card element
@@ -202,126 +214,99 @@ customElements.define('st-digital-clock-card', DigitalClockCard);
 
 class DigitalClockCardEditor extends LitElement {
 
-  static get properties() {
-    return {
-      hass: { type: Object },
-      _config: { type: Object, state: true },
-    };
-  }
+    static get properties() {
+        return {
+        hass: { type: Object },
+        _config: { type: Object, state: true },
+        };
+    }
 
-  setConfig(config) {
-    this._config = config;
-  }
+    setConfig(config) {
+        // Store the current config for the editor UI
+        this._config = config;
+    }
 
-  static get styles() {
-    // You can add styles for the editor form here if needed
-    return css`
+    static get styles() {
+        return css`
         .form-row {
             margin-bottom: 16px;
             display: block; /* Ensure elements like picker take full width */
         }
-        ha-textfield {
-            width: 100%; /* Make text field take full width */
+        ha-textfield, ha-select {
+            width: 100%; /* Make text field and select take full width */
+        }
+        ha-formfield { /* Style radio button labels */
+             display: inline-block;
+             margin-right: 16px;
+        }
+        label { /* Style the radio group label */
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500; /* Make it look like other labels */
         }
         `;
-  }
-
-  render() {
-    if (!this.hass || !this._config) {
-      return html``;
     }
 
-    // Helper to fire config changed event
-    const _valueChanged = (ev) => {
-      if (!this._config || !this.hass || !ev.target) {
-        return;
-      }
-
-      // Helper to fire config changed event (keep the existing one)
-      const _valueChanged = (ev) => {
-        if (!this._config || !this.hass || !ev.target) {
-          return;
-        }
-        const target = ev.target;
-        const configKey = target.dataset.configKey || target.configValue;
-
-        if (!configKey) {
-          console.warn("No configKey found for element", target);
-          return;
+    render() {
+        if (!this.hass || !this._config) {
+        return html``;
         }
 
-        let newValue;
-        // Handle specific types
-        if (target.tagName === 'HA-RADIO') {
-          // Value for radio buttons comes from the 'value' attribute of the selected radio
-          newValue = target.value;
-        } else if (target.type === 'checkbox' || target.tagName === 'HA-SWITCH') {
-          newValue = target.checked;
-        } else {
-          newValue = target.value; // Default for textfield, select, picker etc.
-        }
+        // Helper to fire config changed event
+        const _valueChanged = (ev) => {
+            if (!this._config || !this.hass || !ev.target) {
+                return;
+            }
+            const target = ev.target;
+            // Get the property name from data-config-key attribute or fallback to configValue
+            const configKey = target.dataset.configKey || target.configValue;
 
+            if (!configKey) {
+                console.warn("No configKey found for element", target);
+                return;
+            }
 
-        // Don't store empty strings for optional fields like font_size
-        if (configKey === 'font_size' && newValue === '') {
-          newValue = undefined;
-        }
-        // Convert show_seconds radio value back to boolean
-        if (configKey === 'show_seconds') {
-          newValue = newValue === 'true'; // Radio values are strings
-        }
+            let newValue;
+            // Handle specific element types
+            if (target.tagName === 'HA-RADIO') {
+                 newValue = target.value; // Value is 'true' or 'false' string
+            } else if (target.tagName === 'HA-SWITCH' || target.type === 'checkbox') {
+                 newValue = target.checked;
+            } else if (target.tagName === 'HA-SELECT' || target.tagName === 'PAPER-LISTBOX') {
+                 // Need to handle selected value from ha-select or paper-listbox
+                 newValue = target.value;
+            }
+             else {
+                 newValue = target.value; // Default for textfield, picker etc.
+            }
 
+            // Convert specific string values if needed
+            if (configKey === 'show_seconds') {
+                newValue = newValue === 'true'; // Convert radio string back to boolean
+            }
+            // Handle optional fields that might be cleared
+            else if (configKey === 'font_size' && newValue === '') {
+                 newValue = undefined; // Store undefined/null if cleared
+            }
 
-        if (this._config[configKey] !== newValue) {
-          const newConfig = { ...this._config, [configKey]: newValue };
-          const event = new CustomEvent("config-changed", {
-            detail: { config: newConfig },
-            bubbles: true,
-            composed: true,
-          });
-          this.dispatchEvent(event);
-        }
-      };
+            // Only fire event if value actually changed
+            if (this._config[configKey] !== newValue) {
+                const newConfig = { ...this._config, [configKey]: newValue };
 
-      const target = ev.target;
-      // Get the property name from data-config-key attribute or fallback to configValue
-      const configKey = target.dataset.configKey || target.configValue; // Use configValue as fallback
+                // Fire the event to let HA know the config changed
+                const event = new CustomEvent("config-changed", {
+                    detail: { config: newConfig },
+                    bubbles: true,
+                    composed: true,
+                });
+                this.dispatchEvent(event);
+            }
+        };
 
-      if (!configKey) {
-        console.warn("No configKey found for element", target);
-        return;
-      }
+        // Determine current state for radio buttons (defaulting to true if undefined)
+        const showSecondsChecked = this._config.show_seconds !== false;
 
-      let newValue = target.value;
-
-      // Handle ha-entity-picker value change specifically
-      if (target.tagName === 'HA-ENTITY-PICKER') {
-        newValue = target.value; // ha-entity-picker value is directly the entity_id string
-      } else if (target.type === 'checkbox') { // Example if you add checkboxes later
-        newValue = target.checked;
-      }
-
-
-      // Don't store empty strings for optional fields like font_size
-      if (configKey === 'font_size' && newValue === '') {
-        newValue = undefined; // Store undefined or null
-      }
-
-      // Update the configuration object only if the value actually changed
-      if (this._config[configKey] !== newValue) {
-        const newConfig = { ...this._config, [configKey]: newValue };
-
-        // Fire the event to let HA know the config changed
-        const event = new CustomEvent("config-changed", {
-          detail: { config: newConfig },
-          bubbles: true,
-          composed: true,
-        });
-        this.dispatchEvent(event);
-      }
-    };
-
-    return html`
+        return html`
         <div class="card-config">
             <div class="form-row">
                 <ha-entity-picker
@@ -350,14 +335,14 @@ class DigitalClockCardEditor extends LitElement {
 
              <div class="form-row">
                 <ha-select
-                    .label="Hour Format (Optional)"
+                    .label="Hour Format"
                     .value=${this._config.hour_format || '24h'} /* Default to 24h */
                     .configValue=${'hour_format'}
                     data-config-key="hour_format"
-                    @selected=${_valueChanged} /* Use selected event for ha-select */
-                    @closed=${(ev) => ev.stopPropagation()} /* Prevent closing accordion */
-                    fixedMenuPosition /* Style */
-                    naturalMenuWidth /* Style */
+                    @selected=${_valueChanged}
+                    @closed=${(ev) => ev.stopPropagation()}
+                    fixedMenuPosition
+                    naturalMenuWidth
                 >
                     <mwc-list-item value="24h">24 Hour</mwc-list-item>
                     <mwc-list-item value="12h">12 Hour</mwc-list-item>
@@ -365,43 +350,45 @@ class DigitalClockCardEditor extends LitElement {
              </div>
 
              <div class="form-row">
-                 <label>Show Seconds?</label>
-                 <ha-formfield .label=${"Yes"}>
-                     <ha-radio
-                         name="show_seconds"
-                         value="true"
-                         .checked=${this._config.show_seconds !== false} /* Default to true */
-                         .configValue=${'show_seconds'}
-                         data-config-key="show_seconds"
-                         @change=${_valueChanged}
-                     ></ha-radio>
-                 </ha-formfield>
-                 <ha-formfield .label=${"No"}>
-                     <ha-radio
-                         name="show_seconds"
-                         value="false"
-                         .checked=${this._config.show_seconds === false}
-                         .configValue=${'show_seconds'}
-                         data-config-key="show_seconds"
-                         @change=${_valueChanged}
-                     ></ha-radio>
-                 </ha-formfield>
+                 <label id="show-seconds-label">Show Seconds?</label>
+                 <div role="radiogroup" aria-labelledby="show-seconds-label">
+                     <ha-formfield .label=${"Yes"}>
+                         <ha-radio
+                             name="show_seconds_group"
+                             value="true"
+                             .checked=${showSecondsChecked}
+                             .configValue=${'show_seconds'} /* Note: Value comes from event target */
+                             data-config-key="show_seconds"
+                             @change=${_valueChanged}
+                         ></ha-radio>
+                     </ha-formfield>
+                     <ha-formfield .label=${"No"}>
+                         <ha-radio
+                             name="show_seconds_group"
+                             value="false"
+                             .checked=${!showSecondsChecked}
+                             .configValue=${'show_seconds'}
+                             data-config-key="show_seconds"
+                             @change=${_valueChanged}
+                         ></ha-radio>
+                     </ha-formfield>
+                 </div>
              </div>
 
         </div>
         `;
-  }
+    }
 }
 
-customElements.define('st-digital-clock-editor', DigitalClockCardEditor);
+customElements.define('st-digital-clock-card-editor', DigitalClockCardEditor);
 
 
 // Add card info for the Picker UI
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "st-digital-clock-card",
-  name: "Digital Clock Card",
-  description: "Displays the time from the Digital Clock sensor.",
-  preview: true, // Enable preview
-  documentationURL: "https://github.com/stomaskov/st-digital-clock",
+    type: "st-digital-clock-card",
+    name: "Digital Clock Card",
+    description: "Displays the time from the Digital Clock sensor with formatting options.",
+    preview: true, // Enable preview in card picker
+    documentationURL: "https://github.com/stomaskov/st-digital-clock", // Link to your repo
 });

@@ -1,7 +1,7 @@
 {
   "domain": "st_digital_clock",
   "name": "Digital Clock Sensor & Card",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "documentation": "https://github.com/stomaskov/st-digital-clock",
   "issue_tracker": "https://github.com/stomaskov/st-digital-clock/issues",
   "codeowners": ["@stomaskov"],
