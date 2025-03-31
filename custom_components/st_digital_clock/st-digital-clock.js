@@ -399,7 +399,7 @@ customElements.define('st-digital-clock-editor', DigitalClockCardEditor);
 // Add card info for the Picker UI
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "st-digital-clock",
+  type: "st-digital-clock-card",
   name: "Digital Clock Card",
   description: "Displays the time from the Digital Clock sensor.",
   preview: true, // Enable preview
