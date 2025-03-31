@@ -1,0 +1,19 @@
+{
+  "domain": "st_digital_clock",
+  "name": "Digital Clock Sensor & Card",
+  "version": "1.0.0",
+  "documentation": "https://github.com/stomaskov/st-digital-clock",
+  "issue_tracker": "https://github.com/stomaskov/st-digital-clock/issues",
+  "codeowners": ["@stomaskov"],
+  "requirements": [],
+  "iot_class": "calculated",
+  "config_flow": true,
+  "frontend_resources": [
+    {
+      "type": "module",
+      "url": "/local/community/st-digital-clock/st-digital-clock.js"
+    }
+  ],
+  "dependencies": [],
+  "after_dependencies": ["frontend"]
+}
