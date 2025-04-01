@@ -1,7 +1,7 @@
 {
   "domain": "st_digital_clock",
   "name": "Digital Clock Sensor & Card",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "documentation": "https://github.com/stomaskov/st-digital-clock",
   "issue_tracker": "https://github.com/stomaskov/st-digital-clock/issues",
   "codeowners": ["@stomaskov"],
@@ -11,7 +11,7 @@
   "frontend_resources": [
     {
       "type": "module",
-      "url": "/hacsfiles/st_digital_clock/st-digital-clock-card.js"
+      "url": "/hacsfiles/st-digital-clock/st-digital-clock-card.js"
     }
   ],
   "dependencies": [],
